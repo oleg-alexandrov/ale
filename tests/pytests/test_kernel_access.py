@@ -333,3 +333,91 @@ def test_get_metakernels_search_counts(tmpdir, search_kwargs, expected_count):
 
     search_result =  kernel_access.get_metakernels(str(tmpdir), **search_kwargs)
     assert search_result['count'] == expected_count
+
+def test_get_metakernels_all_isisdata_shapes(tmpdir):
+    """Regression coverage for every metakernel name shape seen in a real ISISDATA.
+    There is no formal metakernel naming standard, so this exercises each observed
+    form with a real example. Pure filename stubs (no SPICE, no kernels). Confirms
+    the year and version are read by pattern (not by fixed position), forecast and
+    planning metakernels (predicted, plan, flip) are skipped, and the observation
+    metakernel is selected.
+
+    Shapes covered (one real example each):
+      mission_year_version              mro_2005_v08, msgr_2004_v13
+      mission_subset_year_version       orx_noola_2020_v06
+      mission_year                      lro_2013
+      mission_year_VERSION (upper V)    lro_2009_V04
+      mission_version (no year)         msl_v01
+      mission_body_provider_m<N>_v<N>   dawn_ceres_dlr_m135_v1  (Dawn, no year)
+      SEMANTIC (no year, no version)    MEX_OPS, ROS_OPS, SMART1_OPS, em16_cassis
+      SEMANTIC_Vver_date_build (5 seg)  MEX_OPS_V324_20250321_001, em16_cassis_v533_20250325_002
+      MISSION_PREDICTED_Vver            CH1_PREDICTED_V00  (skipped)
+      MISSION_Vver                      CH1_V00
+      planning / flip                   em16_plan, em16_flip (skipped)
+    """
+    def mk(mission, *names):
+        d = tmpdir.mkdir(mission).mkdir('kernels').mkdir('mk')
+        for n in names:
+            open(d.join(n), 'w').close()
+
+    mk('mro',    'mro_2005_v01.tm', 'mro_2005_v08.tm')
+    mk('msgr',   'msgr_2004_v08.tm', 'msgr_2004_v13.tm')
+    mk('orx',    'orx_2016_v01.tm', 'orx_noola_2020_v01.tm', 'orx_noola_2020_v06.tm')
+    mk('lro',    'lro_2013.tm', 'lro_2018.tm', 'lro_2009_V02.tm', 'lro_2009_V04.tm')
+    mk('msl',    'msl_v01.tm')
+    mk('dawn',   'dawn_ceres_dlr_m135_v1.tm', 'dawn_ceres_grv_m100_v1.tm', 'dawn_vesta_grv_m50_v1.tm')
+    mk('mex',    'MEX_OPS.TM', 'MEX_OPS_V324_20250321_001.TM')
+    mk('ros',    'ROS_OPS.TM', 'ROS_OPS_V350_20220906_001.TM')
+    mk('smart1', 'SMART1_OPS.TM')
+    mk('ch1',    'CH1_V00.TM', 'CH1_PREDICTED_V00.TM')
+    mk('tgo',    'em16_cassis.tm', 'em16_ops.tm', 'em16_plan.tm', 'em16_flip.tm',
+                 'em16_cassis_v533_20250325_002.tm', 'em16_plan_v533_20250318_001.tm')
+
+    def pick(m, y):
+        r = kernel_access.get_metakernels(str(tmpdir), missions=m, years=y, versions='latest')
+        got = [os.path.basename(d['path']) for d in r['data']]
+        assert r['count'] == 1, f"{m} {y}: expected one metakernel, got {got}"
+        return got[0]
+
+    assert pick('mro', 2005)    == 'mro_2005_v08.tm'          # latest version wins
+    assert pick('msgr', 2004)   == 'msgr_2004_v13.tm'
+    assert pick('orx', 2020)    == 'orx_noola_2020_v06.tm'    # 4-segment name
+    assert pick('lro', 2013)    == 'lro_2013.tm'              # year-only
+    assert pick('lro', 2009)    == 'lro_2009_V04.tm'          # uppercase version
+    assert pick('msl', 2023)    == 'msl_v01.tm'               # version-only (year N/A)
+    assert pick('dawn', 2015).startswith('dawn_')            # body/product name, no year
+    assert pick('mex', 2005)    == 'MEX_OPS.TM'               # generic over dated snapshot
+    assert pick('ros', 2005)    == 'ROS_OPS.TM'
+    assert pick('smart1', 2005) == 'SMART1_OPS.TM'            # single semantic metakernel
+    assert pick('ch1', 2009)    == 'CH1_V00.TM'               # predicted is skipped
+    assert pick('tgo', 2018)    == 'em16_cassis.tm'           # planning and flip skipped
+
+    # build-dated variants parse without corrupting the path field: the 8-digit
+    # build date is read as the year, the v<N> segment as the version.
+    dated = [m for m in kernel_access.get_metakernels(str(tmpdir), missions='tgo')['data']
+             if m['path'].endswith('em16_cassis_v533_20250325_002.tm')][0]
+    assert dated['year'] == '20250325'
+    assert dated['version'] == 'v533'
+
+
+def test_get_kernels_from_metakernel_relative_paths(tmpdir, monkeypatch):
+    """A metakernel with relative PATH_VALUES (e.g. '..', as ESA ships) must
+    resolve its kernels against the metakernel's own directory, not the current
+    working directory. Regression: os.path.isfile('../ck/...') was checked
+    relative to CWD and failed unless ALE ran from kernels/mk/.
+    """
+    kroot = tmpdir.mkdir('kernels')
+    mkdir = kroot.mkdir('mk')
+    ckdir = kroot.mkdir('ck')
+    open(ckdir.join('stub.bc'), 'w').close()
+    mk = mkdir.join('test.tm')
+    mk.write("\\begindata\n"
+             "    PATH_VALUES     = ( '..' )\n"
+             "    PATH_SYMBOLS    = ( 'KERNELS' )\n"
+             "    KERNELS_TO_LOAD = ( '$KERNELS/ck/stub.bc' )\n"
+             "\\begintext\n")
+
+    # run from a DIFFERENT directory to prove resolution is anchored to the mk dir
+    monkeypatch.chdir(str(tmpdir.mkdir('elsewhere')))
+    kernels = kernel_access.get_kernels_from_metakernel(str(mk))
+    assert [os.path.realpath(k) for k in kernels] == [os.path.realpath(str(ckdir.join('stub.bc')))]
