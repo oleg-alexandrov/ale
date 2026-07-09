@@ -2,9 +2,12 @@
 #define ALE_DISTORTION_H
 
 namespace ale {
+  // Keep in the same order as the DistortionType enum in USGSCSM
+  // (usgscsm/include/usgscsm/Distortion.h), where these integer values are
+  // saved to CSM camera files.
   enum DistortionType {
-    TRANSVERSE,
     RADIAL,
+    TRANSVERSE,
     KAGUYALISM,
     DAWNFC,
     LROLROCNAC,

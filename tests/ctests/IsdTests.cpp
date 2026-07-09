@@ -156,7 +156,8 @@ TEST(Isd, UnrecognizedDistortion) {
   nlohmann::json j;
   j["optical_distortion"]["foo"]["x"] = {1};
 
-  EXPECT_EQ(ale::getDistortionModel(j), ale::DistortionType::TRANSVERSE);
+  // Throw on an unknown distortion model.
+  EXPECT_THROW(ale::getDistortionModel(j), std::runtime_error);
 }
 
 TEST(Isd, BadLogFile) {
