@@ -341,38 +341,43 @@ double getSemiMinorRadius(json isd) {
 // Converts the distortion model name from the ISD (string) to the enumeration
 // type. Defaults to transverse
 DistortionType getDistortionModel(json isd) {
+  std::string distortion;
+  // Read the distortion model name from the ISD. Only the JSON access is
+  // guarded, so a genuinely unknown model name is reported below rather than
+  // being masked by this parse-error handler.
   try {
     json distortion_subset = isd.at("optical_distortion");
-
     json::iterator it = distortion_subset.begin();
-
-    std::string distortion = (std::string)it.key();
-
-    if (distortion.compare("transverse") == 0) {
-      return DistortionType::TRANSVERSE;
-    } else if (distortion.compare("radial") == 0) {
-      return DistortionType::RADIAL;
-    } else if (distortion.compare("kaguyalism") == 0) {
-      return DistortionType::KAGUYALISM;
-    } else if (distortion.compare("dawnfc") == 0) {
-      return DistortionType::DAWNFC;
-    } else if (distortion.compare("lrolrocnac") == 0) {
-      return DistortionType::LROLROCNAC;
-    } else if (distortion.compare("cahvor") == 0) {
-      return DistortionType::CAHVOR;
-    } else if (distortion.compare("lunarorbiter") == 0) {
-      return DistortionType::LUNARORBITER;
-    } else if (distortion.compare("radtan") == 0) {
-      return DistortionType::RADTAN;
-    } else if (distortion.compare("kplo_shadowcam") == 0) {
-      return DistortionType::KPLOSHADOWCAM;
-    } else if (distortion.compare("cassis") == 0) {
-      return DistortionType::CASSIS;
-    }
+    distortion = (std::string)it.key();
   } catch (...) {
     throw std::runtime_error("Could not parse the distortion model.");
   }
-  return DistortionType::TRANSVERSE;
+
+  if (distortion.compare("transverse") == 0) {
+    return DistortionType::TRANSVERSE;
+  } else if (distortion.compare("radial") == 0) {
+    return DistortionType::RADIAL;
+  } else if (distortion.compare("kaguyalism") == 0) {
+    return DistortionType::KAGUYALISM;
+  } else if (distortion.compare("dawnfc") == 0) {
+    return DistortionType::DAWNFC;
+  } else if (distortion.compare("lrolrocnac") == 0) {
+    return DistortionType::LROLROCNAC;
+  } else if (distortion.compare("cahvor") == 0) {
+    return DistortionType::CAHVOR;
+  } else if (distortion.compare("lunarorbiter") == 0) {
+    return DistortionType::LUNARORBITER;
+  } else if (distortion.compare("radtan") == 0) {
+    return DistortionType::RADTAN;
+  } else if (distortion.compare("kplo_shadowcam") == 0) {
+    return DistortionType::KPLOSHADOWCAM;
+  } else if (distortion.compare("cassis") == 0) {
+    return DistortionType::CASSIS;
+  }
+
+  // Fail loudly on an unrecognized model. Silently defaulting (previously to
+  // TRANSVERSE) would apply the wrong distortion, or none, without any warning.
+  throw std::runtime_error("Unsupported distortion model: " + distortion);
 }
 
 std::vector<double> getDistortionCoeffs(json isd) {
