@@ -156,8 +156,7 @@ TEST(Isd, UnrecognizedDistortion) {
   nlohmann::json j;
   j["optical_distortion"]["foo"]["x"] = {1};
 
-  // An unrecognized distortion model must fail loudly, not silently default
-  // to TRANSVERSE (which would apply the wrong distortion, or none).
+  // Throw on an unknown distortion model.
   EXPECT_THROW(ale::getDistortionModel(j), std::runtime_error);
 }
 

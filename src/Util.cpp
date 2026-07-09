@@ -342,9 +342,7 @@ double getSemiMinorRadius(json isd) {
 // type. Defaults to transverse
 DistortionType getDistortionModel(json isd) {
   std::string distortion;
-  // Read the distortion model name from the ISD. Only the JSON access is
-  // guarded, so a genuinely unknown model name is reported below rather than
-  // being masked by this parse-error handler.
+  // An error is thrown on an unknown distortion model.
   try {
     json distortion_subset = isd.at("optical_distortion");
     json::iterator it = distortion_subset.begin();
@@ -375,8 +373,6 @@ DistortionType getDistortionModel(json isd) {
     return DistortionType::CASSIS;
   }
 
-  // Fail loudly on an unrecognized model. Silently defaulting (previously to
-  // TRANSVERSE) would apply the wrong distortion, or none, without any warning.
   throw std::runtime_error("Unsupported distortion model: " + distortion);
 }
 
