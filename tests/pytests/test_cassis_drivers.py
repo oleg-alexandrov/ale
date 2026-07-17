@@ -72,3 +72,10 @@ class test_cassis_isis_naif(unittest.TestCase):
                           new_callable=PropertyMock, return_value=1024.5):
             assert self.driver.detector_center_line == 1024.0
 
+    def test_focal_length(self):
+        # The CaSSIS focal length is defined only in the ISIS addendum kernel, not
+        # in any NAIF instrument kernel, so the driver returns it directly (latest
+        # addendum, 874.9 mm). This must hold on the NaifSpice path without the
+        # addendum being furnished.
+        assert self.driver.focal_length == 874.9
+

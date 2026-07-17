@@ -59,6 +59,49 @@ class TGOCassisIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, CassisDist
         return -143420
 
     @property
+    def focal_length(self):
+        """
+        Returns the CaSSIS focal length in mm.
+
+        The CaSSIS focal length is defined only in the ISIS addendum kernel
+        (tgoCassisAddendum, key INS-143400_FOCAL_LENGTH). No NAIF instrument
+        kernel carries it, so the NaifSpice metakernel path cannot read it and it
+        would otherwise come back null. Return the value from the latest addendum
+        here, following the Cassini driver precedent for addendum-only values.
+        This is a versioned calibration (addendum 001-005 were 880.0, 006 was
+        876.0, 007 is 874.9); update it if a newer addendum ships.
+        """
+        return 874.9
+
+    @property
+    def light_time_correction(self):
+        """
+        CaSSIS light-time and aberration correction, INS-143400_LIGHTTIME_CORRECTION
+        = LT+S. Addendum-only (no NAIF kernel carries it), so the NaifSpice path
+        cannot read it; hardcode it so the sensor_position override below fires.
+        """
+        return 'LT+S'
+
+    @property
+    def correct_lt_to_surface(self):
+        """
+        CaSSIS corrects light time to the target surface, INS-143400_LT_SURFACE_CORRECT
+        = TRUE. Addendum-only, so hardcode it. Without this the NaifSpice path reads
+        False, the sensor_position override does not fire, and the CSM camera center
+        is biased about 96 m from ISIS.
+        """
+        return True
+
+    @property
+    def swap_observer_target(self):
+        """
+        CaSSIS swaps observer and target in the state lookup,
+        INS-143400_SWAP_OBSERVER_TARGET = TRUE. Addendum-only, so hardcode it to
+        match ISIS on the NaifSpice path.
+        """
+        return True
+
+    @property
     def sensor_model_version(self):
         """
         Returns
@@ -94,20 +137,72 @@ class TGOCassisIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, CassisDist
     def detector_center_sample(self):
         """
         ISIS uses 0.5-based CCD coordinates (pixel centers at half integers),
-        so convert the IK boresight sample to the CSM 0-based convention by
+        so convert the boresight sample to the CSM 0-based convention by
         subtracting 0.5, as the LRO, MRO, Dawn, MESSENGER, MEX, Kaguya and KPLO
         drivers do. Without this the CSM look is offset from ISIS by half a pixel
         in sample (and half in line), i.e. sqrt(0.5^2+0.5^2) ~ 0.707 px.
+
+        The boresight sample (INS-143400_BORESIGHT_SAMPLE = 1024.5) is defined
+        only in the ISIS addendum and cannot be read on the NaifSpice path, so it
+        is hardcoded here. It is a stable CCD geometry constant, unlike the focal
+        length.
         """
-        return super().detector_center_sample - 0.5
+        return 1024.5 - 0.5
 
     @property
     def detector_center_line(self):
         """
         ISIS uses 0.5-based CCD coordinates; convert to the CSM 0-based
-        convention by subtracting 0.5 (see detector_center_sample).
+        convention by subtracting 0.5 (see detector_center_sample). The boresight
+        line (INS-143400_BORESIGHT_LINE = 1024.5) is addendum-only, so hardcoded.
         """
-        return super().detector_center_line - 0.5
+        return 1024.5 - 0.5
+
+    @property
+    def focal2pixel_lines(self):
+        """
+        Transform from focal-plane millimeters to detector lines,
+        INS-143400_ITRANSL. Addendum-only (null on the NaifSpice path), so
+        hardcoded. The 100 is 1 / pixel pitch (0.01 mm). Stable CCD geometry.
+        """
+        return [0.0, 0.0, 100.0]
+
+    @property
+    def focal2pixel_samples(self):
+        """
+        Transform from focal-plane millimeters to detector samples,
+        INS-143400_ITRANSS. Addendum-only, hardcoded (see focal2pixel_lines).
+        """
+        return [0.0, 100.0, 0.0]
+
+    @property
+    def usgscsm_distortion_model(self):
+        """
+        CaSSIS rational (ratio-of-quadratics) distortion, INS-143400_OD_A{1,2,3}_
+        {CORR,DIST}. These keywords exist in BOTH the NAIF IK and the ISIS addendum
+        with DIFFERENT values; ISIS loads the addendum on top of the IK, so the
+        addendum values are the ones ISIS uses. The NaifSpice path here furnishes
+        only the IK (the addendum is ISIS-only, and furnishing it breaks driver
+        matching), which would otherwise give the wrong, un-overridden IK
+        distortion. So return the addendum values directly, from
+        tgoCassisAddendum007.ti, to match ISIS and the focal length (also from
+        addendum 007). Versioned like the focal length; update if a newer addendum
+        ships. Packed A1_corr, A2_corr, A3_corr, A1_dist, A2_dist, A3_dist.
+        """
+        A1_CORR = [0.0037613053094826604, -0.0134154156065812, -1.8674952100723702e-05,
+                   1.00021352681836, -0.00043236237170395304, -0.000948065735350123]
+        A2_CORR = [9.9842559363676e-05, 0.00373543707958162, -0.0133299918873929,
+                   -0.000215311328389359, 0.995296015537294, -0.0183542717710778]
+        A3_CORR = [-3.13320167004204e-05, -7.3565512574980695e-06, -1.57664245066771e-05,
+                   0.0037354946543915104, -0.014167194693093499, 1.0]
+        A1_DIST = [0.0021365879556062197, -0.00711785765064197, 1.10355974742147e-05,
+                   0.573607182625377, 0.000250884350194894, 0.000550623913037132]
+        A2_DIST = [-5.6972574101540595e-05, 0.00215155905679149, -0.00716392991767185,
+                   0.000124152787728634, 0.5764595443924261, 0.010576940564854]
+        A3_DIST = [1.7825077148350597e-05, 4.24592743471094e-06, 9.51220699036653e-06,
+                   0.0021515842542073798, -0.0066835595774833, 0.573741540971609]
+        return {"cassis": {"coefficients":
+                A1_CORR + A2_CORR + A3_CORR + A1_DIST + A2_DIST + A3_DIST}}
 
     @property
     def sensor_position(self):
