@@ -1,3 +1,5 @@
+import os
+import glob
 import numpy as np
 import scipy.constants
 import spiceypy as spice
@@ -17,7 +19,7 @@ class TGOCassisIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, CassisDist
     @property
     def instrument_id(self):
         """
-        Returns an instrument id for unquely identifying the instrument, but often
+        Returns an instrument id for uniquely identifying the instrument, but often
         also used to be piped into Spice Kernels to acquire IKIDs. Therefore they
         the same ID the Spice expects in bods2c calls.
         Expects instrument_id to be defined in the Pds3Label mixin. This should
@@ -59,47 +61,93 @@ class TGOCassisIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, CassisDist
         return -143420
 
     @property
+    def kernels(self):
+        """
+        Furnish the ISIS CaSSIS addendum (tgoCassisAddendum) alongside the mission
+        metakernel. Several CaSSIS constants (focal length, ITRANSS/ITRANSL,
+        boresight, the optical distortion, and the light-time flags) live only in
+        the ISIS addendum, not in any NAIF instrument kernel.
+        """
+        kernels = super().kernels
+        if not getattr(self, "_cassis_addendum_furnished", False):
+            self._cassis_addendum_furnished = True
+            iak = self._isis_cassis_addendum()
+            if iak is not None:
+                if isinstance(kernels, dict):
+                    existing = kernels.get("iak", [])
+                    if not any("Addendum" in str(k) for k in existing):
+                        kernels["iak"] = existing + [iak]
+                elif isinstance(kernels, list):
+                    if not any("Addendum" in str(k) for k in kernels):
+                        kernels = kernels + [iak]
+                        self._kernels = kernels
+        return kernels
+
+    def _isis_cassis_addendum(self):
+        """
+        Locate the latest ISIS CaSSIS addendum in the ISIS data area, mirroring the
+        ISIS iak kernel database (match on the CaSSIS instrument, tgoCassisAddendum
+        with the highest version). Returns the path, or None when the data area has
+        no addendum (so the caller falls back to hardcoded constants).
+        """
+        root = os.environ.get("ALESPICEROOT") or os.environ.get("ISISDATA")
+        if not root:
+            return None
+        matches = sorted(glob.glob(os.path.join(root, "tgo", "kernels", "iak",
+                                                 "tgoCassisAddendum*.ti")))
+        return matches[-1] if matches else None
+
+    @property
+    def _addendum_furnished(self):
+        """
+        True when the ISIS addendum is furnished. FOCAL_LENGTH is addendum-only (no
+        NAIF kernel has it), so its presence is a reliable flag. Needed for the
+        distortion, whose OD_A keys exist in both the NAIF kernel and the addendum
+        with different values, so their presence alone cannot tell them apart.
+        """
+        return f"INS{self.ikid}_FOCAL_LENGTH" in self.naif_keywords
+
+    def _addendum_keyword(self, suffix, default):
+        """
+        Read INS<ikid>_<suffix> from the furnished pool, or return default (the
+        latest known addendum constant) when the addendum is not furnished.
+        """
+        value = self.naif_keywords.get(f"INS{self.ikid}_{suffix}")
+        return default if value is None else value
+
+    @property
     def focal_length(self):
         """
-        Returns the CaSSIS focal length in mm.
-
-        The CaSSIS focal length is defined only in the ISIS addendum kernel
-        (tgoCassisAddendum, key INS-143400_FOCAL_LENGTH). No NAIF instrument
-        kernel carries it, so the NaifSpice metakernel path cannot read it and it
-        would otherwise come back null. Return the value from the latest addendum
-        here, following the Cassini driver precedent for addendum-only values.
-        This is a versioned calibration (addendum 001-005 were 880.0, 006 was
-        876.0, 007 is 874.9); update it if a newer addendum ships.
+        CaSSIS focal length in mm, read from the furnished addendum
+        (INS-143400_FOCAL_LENGTH); no NAIF kernel carries it. Fallback is the latest
+        known value (007 = 874.9), used only when the addendum is not furnished.
         """
-        return 874.9
+        return self._addendum_keyword("FOCAL_LENGTH", 874.9)
 
     @property
     def light_time_correction(self):
         """
-        CaSSIS light-time and aberration correction, INS-143400_LIGHTTIME_CORRECTION
-        = LT+S. Addendum-only (no NAIF kernel carries it), so the NaifSpice path
-        cannot read it; hardcode it so the sensor_position override below fires.
+        INS-143400_LIGHTTIME_CORRECTION (addendum), read from the furnished pool.
+        Fallback LT+S so the sensor_position override still fires.
         """
-        return 'LT+S'
+        return self._addendum_keyword("LIGHTTIME_CORRECTION", 'LT+S')
 
     @property
     def correct_lt_to_surface(self):
         """
-        CaSSIS corrects light time to the target surface, INS-143400_LT_SURFACE_CORRECT
-        = TRUE. Addendum-only, so hardcode it. Without this the NaifSpice path reads
-        False, the sensor_position override does not fire, and the CSM camera center
-        is biased about 96 m from ISIS.
+        INS-143400_LT_SURFACE_CORRECT (addendum). Without it the sensor_position
+        override does not fire and the camera center is off about 96 m from ISIS,
+        so the fallback is True.
         """
-        return True
+        return bool(self._addendum_keyword("LT_SURFACE_CORRECT", True))
 
     @property
     def swap_observer_target(self):
         """
-        CaSSIS swaps observer and target in the state lookup,
-        INS-143400_SWAP_OBSERVER_TARGET = TRUE. Addendum-only, so hardcode it to
-        match ISIS on the NaifSpice path.
+        INS-143400_SWAP_OBSERVER_TARGET (addendum), read from the furnished pool,
+        fallback True to match ISIS.
         """
-        return True
+        return bool(self._addendum_keyword("SWAP_OBSERVER_TARGET", True))
 
     @property
     def sensor_model_version(self):
@@ -136,59 +184,54 @@ class TGOCassisIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, CassisDist
     @property
     def detector_center_sample(self):
         """
-        ISIS uses 0.5-based CCD coordinates (pixel centers at half integers),
-        so convert the boresight sample to the CSM 0-based convention by
-        subtracting 0.5, as the LRO, MRO, Dawn, MESSENGER, MEX, Kaguya and KPLO
-        drivers do. Without this the CSM look is offset from ISIS by half a pixel
-        in sample (and half in line), i.e. sqrt(0.5^2+0.5^2) ~ 0.707 px.
-
-        The boresight sample (INS-143400_BORESIGHT_SAMPLE = 1024.5) is defined
-        only in the ISIS addendum and cannot be read on the NaifSpice path, so it
-        is hardcoded here. It is a stable CCD geometry constant, unlike the focal
-        length.
+        Boresight sample INS-143400_BORESIGHT_SAMPLE (addendum), converted from the
+        ISIS 0.5-based CCD convention to CSM 0-based by subtracting 0.5 (as LRO, MRO,
+        etc. do); without it the look is off about 0.707 px. ISIS keys the camera on
+        the base -143400 frame for every filter, so this holds for PAN/RED/NIR/BLU.
         """
-        return 1024.5 - 0.5
+        return self._addendum_keyword("BORESIGHT_SAMPLE", 1024.5) - 0.5
 
     @property
     def detector_center_line(self):
         """
-        ISIS uses 0.5-based CCD coordinates; convert to the CSM 0-based
-        convention by subtracting 0.5 (see detector_center_sample). The boresight
-        line (INS-143400_BORESIGHT_LINE = 1024.5) is addendum-only, so hardcoded.
+        Boresight line INS-143400_BORESIGHT_LINE (addendum), converted to CSM
+        0-based by subtracting 0.5 (see detector_center_sample).
         """
-        return 1024.5 - 0.5
+        return self._addendum_keyword("BORESIGHT_LINE", 1024.5) - 0.5
 
     @property
     def focal2pixel_lines(self):
         """
-        Transform from focal-plane millimeters to detector lines,
-        INS-143400_ITRANSL. Addendum-only (null on the NaifSpice path), so
-        hardcoded. The 100 is 1 / pixel pitch (0.01 mm). Stable CCD geometry.
+        Focal-plane mm to detector lines, INS-143400_ITRANSL (addendum). The
+        fallback [0, 0, 100] encodes 1 / pixel pitch (0.01 mm).
         """
-        return [0.0, 0.0, 100.0]
+        return list(self._addendum_keyword("ITRANSL", [0.0, 0.0, 100.0]))
 
     @property
     def focal2pixel_samples(self):
         """
-        Transform from focal-plane millimeters to detector samples,
-        INS-143400_ITRANSS. Addendum-only, hardcoded (see focal2pixel_lines).
+        Focal-plane mm to detector samples, INS-143400_ITRANSS (addendum).
         """
-        return [0.0, 100.0, 0.0]
+        return list(self._addendum_keyword("ITRANSS", [0.0, 100.0, 0.0]))
 
     @property
     def usgscsm_distortion_model(self):
         """
         CaSSIS rational (ratio-of-quadratics) distortion, INS-143400_OD_A{1,2,3}_
-        {CORR,DIST}. These keywords exist in BOTH the NAIF IK and the ISIS addendum
-        with DIFFERENT values; ISIS loads the addendum on top of the IK, so the
-        addendum values are the ones ISIS uses. The NaifSpice path here furnishes
-        only the IK (the addendum is ISIS-only, and furnishing it breaks driver
-        matching), which would otherwise give the wrong, un-overridden IK
-        distortion. So return the addendum values directly, from
-        tgoCassisAddendum007.ti, to match ISIS and the focal length (also from
-        addendum 007). Versioned like the focal length; update if a newer addendum
-        ships. Packed A1_corr, A2_corr, A3_corr, A1_dist, A2_dist, A3_dist.
+        {CORR,DIST}, read from the furnished addendum. These keys exist in both the
+        NAIF kernel and the addendum with different values (ISIS uses the addendum),
+        so gate on FOCAL_LENGTH (addendum-only), not on OD_A presence. Fall back to
+        the latest known coefficients when the addendum is not furnished. Packed
+        A1_corr, A2_corr, A3_corr, A1_dist, A2_dist, A3_dist.
         """
+        if self._addendum_furnished:
+            nk = self.naif_keywords
+            i = self.ikid
+            coefficients = (list(nk[f"INS{i}_OD_A1_CORR"]) + list(nk[f"INS{i}_OD_A2_CORR"]) +
+                            list(nk[f"INS{i}_OD_A3_CORR"]) + list(nk[f"INS{i}_OD_A1_DIST"]) +
+                            list(nk[f"INS{i}_OD_A2_DIST"]) + list(nk[f"INS{i}_OD_A3_DIST"]))
+            return {"cassis": {"coefficients": coefficients}}
+
         A1_CORR = [0.0037613053094826604, -0.0134154156065812, -1.8674952100723702e-05,
                    1.00021352681836, -0.00043236237170395304, -0.000948065735350123]
         A2_CORR = [9.9842559363676e-05, 0.00373543707958162, -0.0133299918873929,
