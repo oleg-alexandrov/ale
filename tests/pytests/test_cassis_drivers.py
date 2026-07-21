@@ -61,14 +61,54 @@ class test_cassis_isis_naif(unittest.TestCase):
     def test_line_summing(self):
         assert self.driver.line_summing == 1
 
-    def test_detector_center_sample(self):
-        # ISIS 0.5-based -> CSM 0-based: subtract 0.5 from the IK boresight.
-        with patch.object(NaifSpice, 'detector_center_sample',
-                          new_callable=PropertyMock, return_value=1024.5):
-            assert self.driver.detector_center_sample == 1024.0
 
-    def test_detector_center_line(self):
-        with patch.object(NaifSpice, 'detector_center_line',
-                          new_callable=PropertyMock, return_value=1024.5):
-            assert self.driver.detector_center_line == 1024.0
+# The CaSSIS focal length, detector geometry, and distortion live only in the ISIS
+# addendum (tgoCassisAddendum), not in any NAIF instrument kernel. The driver
+# furnishes the addendum and reads these values from the pool, falling back to the
+# latest known constants when the addendum is not furnished. The test kernels
+# include the addendum, so these exercise the read path.
+IMAGE = "CAS-MCO-2016-11-26T22.32.14.582-RED-01000-B1"
+
+def test_focal_length_read_from_addendum(test_kernels):
+    label = get_image_label(IMAGE, "isis")
+    with TGOCassisIsisLabelNaifSpiceDriver(label, props={'kernels': test_kernels}) as d:
+        assert d.focal_length == 874.9
+
+def test_detector_center_read_from_addendum(test_kernels):
+    # Boresight 1024.5 from the addendum, converted to the CSM 0-based convention.
+    label = get_image_label(IMAGE, "isis")
+    with TGOCassisIsisLabelNaifSpiceDriver(label, props={'kernels': test_kernels}) as d:
+        assert d.detector_center_sample == 1024.0
+        assert d.detector_center_line == 1024.0
+
+def test_distortion_read_from_addendum(test_kernels):
+    # OD_A exists in both the NAIF kernel and the addendum with different values;
+    # the driver reads the addendum's (ISIS override) first coefficient.
+    label = get_image_label(IMAGE, "isis")
+    with TGOCassisIsisLabelNaifSpiceDriver(label, props={'kernels': test_kernels}) as d:
+        coeffs = d.usgscsm_distortion_model['cassis']['coefficients']
+        assert len(coeffs) == 36
+        assert coeffs[0] == pytest.approx(0.0037613053094826604)
+
+def test_reads_furnished_addendum_not_fallback(test_kernels, tmp_path, monkeypatch):
+    # Furnish a faux addendum with a distinctive focal length and assert the driver
+    # returns it, proving it reads the furnished value rather than the fallback.
+    # Stop the driver from locating the real addendum, so the faux is the only source.
+    monkeypatch.setattr(TGOCassisIsisLabelNaifSpiceDriver,
+                        "_isis_cassis_addendum", lambda self: None)
+    faux = str(tmp_path / "faux_addendum.ti")
+    with open(faux, "w") as f:
+        f.write("\\begindata\nINS-143400_FOCAL_LENGTH = ( 999.9 )\n\\begintext\n")
+    kernels = [k for k in test_kernels if "Addendum" not in k] + [faux]
+    label = get_image_label(IMAGE, "isis")
+    with TGOCassisIsisLabelNaifSpiceDriver(label, props={'kernels': kernels}) as d:
+        assert d.focal_length == 999.9
+
+def test_focal_length_fallback_without_addendum(test_kernels):
+    # Kernels minus the addendum: ikid still resolves from the frame kernel, but
+    # FOCAL_LENGTH is absent, so the driver falls back to the latest known value.
+    no_addendum = [k for k in test_kernels if "Addendum" not in k]
+    label = get_image_label(IMAGE, "isis")
+    with TGOCassisIsisLabelNaifSpiceDriver(label, props={'kernels': no_addendum}) as d:
+        assert d.focal_length == 874.9
 
