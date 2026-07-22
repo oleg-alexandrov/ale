@@ -3,7 +3,8 @@ import spiceypy as spice
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
-import json 
+import json
+import math
 import os
 
 import numpy as np
@@ -20,6 +21,7 @@ from ale import kernel_access
 from ale import logger
 from ale import spice_root
 from ale import util
+from ale import ale_c
 
 class NaifSpice():
     """
@@ -420,7 +422,7 @@ class NaifSpice():
 
         Returns
         -------
-        : float pixel size
+        : float The size of the CCD pixel in meters
         """
         if not hasattr(self, "_pixel_size"):
             try: 
@@ -573,15 +575,18 @@ class NaifSpice():
                 ssb_obs_states = np.array(ssb_obs)[:,0:6]
 
                 radius_lt = (self.target_body_radii[2] + self.target_body_radii[0]) / 2 / (scipy.constants.c/1000.0)
-                adjusted_time = ephem - obs_tar_lts + radius_lt
 
-                kwargs = {**ephem_kwargs,
-                          "target": target,
-                          "observer": "SSB",
-                          "frame": "J2000",
-                          "abcorr": "NONE",
-                          "mission": self.spiceql_mission}
-                ssb_tars = pyspiceql.getTargetStatesRanged(**kwargs)[0]
+                ssb_tars_kwargs = {**ephem_kwargs,
+                                   "target": target,
+                                   "observer": "SSB",
+                                   "frame": "J2000",
+                                   "abcorr": "NONE",
+                                   "mission": self.spiceql_mission}
+                if self.instrument_id == "TGO_CASSIS":
+                    adjusted_time = ephem - obs_tar_lts + radius_lt
+                    ssb_tars_kwargs["startEt"] = adjusted_time[0]
+                    ssb_tars_kwargs["stopEt"] = adjusted_time[-1]
+                ssb_tars = pyspiceql.getTargetStatesRanged(**ssb_tars_kwargs)[0]
                 ssb_tar_states = np.array(ssb_tars)[:,0:6]
 
                 _states = ssb_tar_states - ssb_obs_states
@@ -628,10 +633,52 @@ class NaifSpice():
                     pos.append(state[:3])
                     vel.append(state[3:])
 
-            # By default, SPICE works in km, so convert to m
-            self._position = 1000 * np.asarray(pos)
-            self._velocity = 1000 * np.asarray(vel)
+            self._position = np.asarray(pos)
+            self._velocity = np.asarray(vel)
             self._ephem = ephem
+            
+            reduction = self._props.get('reduction', 'none').lower()
+            if reduction == 'hermite' and len(self._position) > 3:
+                logger.debug("Applying hermite reduction to positions")
+                state_list = [ale_c.State(i) for i in np.append(self._position, self._velocity, axis=1)]
+                states = ale_c.StatesFromStateVec(self._ephem, state_list, 1)
+
+                # Get middle position (it will be in kilometers)
+                middle_state = states.getState(self.center_ephemeris_time, 1)
+                middle_position = np.asarray([middle_state.position.x, 
+                                              middle_state.position.y, 
+                                              middle_state.position.z])
+
+                # Compute a normalized nadir look vector
+                middle_magnitude = np.linalg.norm(middle_position)
+                middle_nadir_lv = middle_position/middle_magnitude
+
+                # Compute a ground coordindate based on target radii
+                a, b, c = self.target_body_radii
+                coord = spice.surfpt([0, 0, 0], middle_nadir_lv, a, b, c)
+                radius = np.linalg.norm(coord)
+                # Ensure the radius is below the spacecraft (largely for landed sensors)
+                radius = min(radius, middle_magnitude - 0.0001)
+
+                # Compute the altitude based on the radius of the ground coordinate
+                # minus the magnitude of the spacecraft position
+                # pixel_size and focal_length are in meters so convert the altitude
+                # to meters
+                altitude = (middle_magnitude - radius) * 1000
+                # Compute an approximate instanious resolution for the camera
+                # then make the tolerance 1/100th of that pixel resolution
+                tol = self.pixel_size * altitude / self.focal_length / 100.
+                logger.debug(f"Minimizing positions with tolerance {tol}")
+
+                minimized_states = states.minimizeCache(tol)
+                logger.debug(f"Reduced positions from {len(self._ephem)} to {len(minimized_states.getStates())}")
+                self._position = np.asarray([[position.x, position.y, position.z] for position in minimized_states.getPositions()])
+                self._velocity = np.asarray([[velocity.x, velocity.y, velocity.z] for velocity in minimized_states.getVelocities()])
+                self._ephem = minimized_states.getTimes()
+
+            # By default, SPICE works in km, so convert to m
+            self._position *= 1000.0
+            self._velocity *= 1000.0
         return self._position, self._velocity, self._ephem
 
     @property
