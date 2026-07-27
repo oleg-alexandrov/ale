@@ -153,11 +153,16 @@ class VikingIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, NoDistortion,
 
     @property
     def detector_center_line(self):
-        return 0
+        # Detector origin (boresight) in pixels, matching ISIS VikingCamera
+        # SetDetectorOrigin(602.0, 528.0). The digitized Viking VIS frame is
+        # 1204 samples x 1056 lines, so this is the array center. A value of 0
+        # here puts the boresight at the detector corner and shifts every pixel
+        # by ~800 px versus the ISIS camera.
+        return 528.0
 
     @property
     def detector_center_sample(self):
-        return 0
+        return 602.0
 
     @property
     def sensor_model_version(self):
@@ -214,3 +219,57 @@ class VikingIsisLabelIsisSpiceDriver(Framer, IsisLabel, IsisSpice, NoDistortion,
           Name of the spacecraft.
         """
         return spacecraft_name_lookup[super().spacecraft_name]
+
+    @property
+    def focal_length(self):
+        """
+        Override the focal length attribute to return the appropriate viking
+        focal length. Values and logic based on ISIS viking camera model. The
+        ISIS cube has no focal length keyword to read on the IsisSpice path, so
+        it must be supplied here, matching the NaifSpice driver.
+
+        Returns
+        -------
+        : float
+          Focal length of viking instrument
+        """
+        if not hasattr(self, "_focal_length"):
+            if (self.spacecraft_name == "VIKING ORBITER 1"):
+                if (self.sensor_name == "Visual Imaging Subsystem Camera A"):
+                    self._focal_length = 474.398
+                elif (self.sensor_name ==  "Visual Imaging Subsystem Camera B"):
+                    self._focal_length = 474.448
+            elif (self.spacecraft_name == "VIKING ORBITER 2"):
+                if (self.sensor_name == "Visual Imaging Subsystem Camera A"):
+                    self._focal_length = 474.610
+                elif (self.sensor_name ==  "Visual Imaging Subsystem Camera B"):
+                    self._focal_length = 474.101
+            else:
+                raise Exception(f"Unknown viking instrument to get focal length: {self.spacecraft_name}, {self.sensor_name}")
+
+        return self._focal_length
+
+    @property
+    def detector_center_line(self):
+        # Detector origin (boresight) in pixels, matching ISIS VikingCamera
+        # SetDetectorOrigin(602.0, 528.0). The digitized Viking VIS frame is
+        # 1204 samples x 1056 lines, so this is the array center. A value of 0
+        # here puts the boresight at the detector corner and shifts every pixel
+        # by ~800 px versus the ISIS camera.
+        return 528.0
+
+    @property
+    def detector_center_sample(self):
+        return 602.0
+
+    @property
+    def sensor_model_version(self):
+        """
+        Returns the ISIS camera version
+
+        Returns
+        -------
+        : int
+          Camera version number
+        """
+        return 1
