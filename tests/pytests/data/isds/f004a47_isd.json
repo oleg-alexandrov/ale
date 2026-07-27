@@ -157,8 +157,8 @@
     "focal_length": 474.398
   },
   "detector_center": {
-    "line": 0,
-    "sample": 0
+    "line": 528.0,
+    "sample": 602.0
   },
   "starting_detector_line": 0,
   "starting_detector_sample": 0,

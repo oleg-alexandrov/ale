@@ -9,7 +9,7 @@ from conftest import data_root, get_image, get_isd, get_image_label, get_image_k
 
 import pyspiceql as psql
 import ale
-from ale.drivers.viking_drivers import VikingIsisLabelNaifSpiceDriver
+from ale.drivers.viking_drivers import VikingIsisLabelNaifSpiceDriver, VikingIsisLabelIsisSpiceDriver
 
 image_dict = {
     # Viking Orbiter 1 VISCA
@@ -313,10 +313,10 @@ class test_isis_naif(unittest.TestCase):
         assert self.driver.ephemeris_start_time == pytest.approx(-679343590.0241007)
 
     def test_detector_center_line(self):
-        assert self.driver.detector_center_line == 0
+        assert self.driver.detector_center_line == 528.0
 
     def test_detector_center_sample(self):
-        assert self.driver.detector_center_sample == 0
+        assert self.driver.detector_center_sample == 602.0
 
     def test_focal_length(self):
         assert self.driver.focal_length == 474.448
@@ -326,4 +326,29 @@ class test_isis_naif(unittest.TestCase):
         psql.load(os.path.join(data_root, "f004a47", "vo1_fsc.tsc"))
         psql.load(os.path.join(data_root, "f004a47", "naif0012.tls"))
         assert self.driver.ephemeris_start_time == pytest.approx(-679343592.2641007)
+
+# ========= Test isislabel and isisspice driver =========
+class test_isis_isis(unittest.TestCase):
+
+    def setUp(self):
+        label = get_image_label("f735a00", "isis3")
+        self.driver = VikingIsisLabelIsisSpiceDriver(label)
+
+    def test_sensor_name(self):
+        assert self.driver.sensor_name == "Visual Imaging Subsystem Camera B"
+
+    def test_spacecraft_name(self):
+        assert self.driver.spacecraft_name == 'VIKING ORBITER 1'
+
+    def test_detector_center_line(self):
+        assert self.driver.detector_center_line == 528.0
+
+    def test_detector_center_sample(self):
+        assert self.driver.detector_center_sample == 602.0
+
+    def test_focal_length(self):
+        assert self.driver.focal_length == 474.448
+
+    def test_sensor_model_version(self):
+        assert self.driver.sensor_model_version == 1
  
