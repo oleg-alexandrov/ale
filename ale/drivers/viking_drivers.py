@@ -153,15 +153,12 @@ class VikingIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, NoDistortion,
 
     @property
     def detector_center_line(self):
-        # Detector origin (boresight) in pixels, matching ISIS VikingCamera
-        # SetDetectorOrigin(602.0, 528.0). The digitized Viking VIS frame is
-        # 1204 samples x 1056 lines, so this is the array center. A value of 0
-        # here puts the boresight at the detector corner and shifts every pixel
-        # by ~800 px versus the ISIS camera.
+        # Boresight line, matching ISIS VikingCamera SetDetectorOrigin(602, 528).
         return 528.0
 
     @property
     def detector_center_sample(self):
+        # Boresight sample, matching ISIS VikingCamera SetDetectorOrigin(602, 528).
         return 602.0
 
     @property
@@ -251,15 +248,12 @@ class VikingIsisLabelIsisSpiceDriver(Framer, IsisLabel, IsisSpice, NoDistortion,
 
     @property
     def detector_center_line(self):
-        # Detector origin (boresight) in pixels, matching ISIS VikingCamera
-        # SetDetectorOrigin(602.0, 528.0). The digitized Viking VIS frame is
-        # 1204 samples x 1056 lines, so this is the array center. A value of 0
-        # here puts the boresight at the detector corner and shifts every pixel
-        # by ~800 px versus the ISIS camera.
+        # Boresight line, matching ISIS VikingCamera SetDetectorOrigin(602, 528).
         return 528.0
 
     @property
     def detector_center_sample(self):
+        # Boresight sample, matching ISIS VikingCamera SetDetectorOrigin(602, 528).
         return 602.0
 
     @property
