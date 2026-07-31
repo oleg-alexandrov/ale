@@ -370,6 +370,62 @@ def ck_comment(outfile: str,
     return ck_comment
 
 
+def check_env(use_web: bool = False):
+    """
+    Checks environment setup for SpiceQL.
+
+    When using the web SpiceQL service, no local SPICE data is required: kernel
+    searching and any ET->SCLK encoding needed to write binary kernels are done
+    server-side.
+
+    When using local data, SpiceQL requires ISISDATA and SPICEQL_CACHE_DIR. ALE
+    defaults SPICEQL_CACHE_DIR to $ISISDATA if it is not already set.
+
+    Parameters
+    -------
+        use_web: bool
+            If True, uses USGS Astrogeology's SpiceQL web service.
+            Defaults to False.
+    """
+    if not use_web:
+        cache_dir = os.environ.get("SPICEQL_CACHE_DIR")
+        if not cache_dir:
+            isisdata = os.environ.get("ISISDATA")
+            if not isisdata:
+                raise Exception("ISISDATA is not set. Point ISISDATA to " \
+                                "your local data area.")
+            os.environ["SPICEQL_CACHE_DIR"] = isisdata
+            logger.info(f"SPICEQL_CACHE_DIR not set; defaulting to ISISDATA [{isisdata}].")
+
+
+def load_isd(isd_file: os.PathLike) -> dict:
+    """
+    Read and parse an ISD JSON file into a dictionary.
+
+    Validates that the file is present and is JSON (by extension and content),
+    raising a clear exception on any failure.
+
+    Parameters
+    ----------
+        isd_file : os.PathLike
+            Path to the input ISD JSON file.
+
+    Returns
+    ----------
+        dict: The parsed ISD contents.
+    """
+    if isd_file is None:
+        raise Exception("Missing ISD file.")
+    if Path(isd_file).suffix != ".json":
+        raise Exception("ISD must be in JSON.")
+    with open(isd_file, "r") as f:
+        contents = f.read()
+    try:
+        return json.loads(contents)
+    except ValueError:
+        raise Exception(f"ISD [{isd_file}] is not valid JSON.")
+
+
 def isd_to_kernel(
     isd_file: os.PathLike = None,
     kernel_type: str = "mk",
@@ -392,12 +448,17 @@ def isd_to_kernel(
     ----------
         isd_file : os.PathLike, optional
             Path to the input ISD JSON file. Required for binary kernels.
+            For text kernels it is optional; when provided, its 'naif_keywords'
+            are written to the kernel.
         kernel_type : str
             The type of kernel to create. Defaults to 'mk'.
         outfile : os.PathLike, optional
             The desired output kernel file name/path.
+            Defaults to ISD filename + kernel extension.
         data : str, optional
-            A JSON string containing keyword-value pairs. Required for text kernels.
+            A JSON string containing keyword-value pairs. For text kernels this
+            is required only when no ISD is provided; when both are given, these
+            keywords are appended after (and override) the ISD's naif_keywords.
         comment : str, optional 
             Custom user text to include in the kernel comment area.
         overwrite : bool
@@ -415,6 +476,10 @@ def isd_to_kernel(
     """
     logging.basicConfig(format="%(message)s", level=log_level)
     logger.setLevel(log_level)
+
+    # Ensure the environment is set up before any SpiceQL calls are made
+    if not use_web and psql.Kernel.isBinary(kernel_type):
+        check_env(use_web)
 
     # Default comment if empty
     if comment is None:
@@ -459,11 +524,7 @@ def isd_to_kernel(
 
     if psql.Kernel.isBinary(kernel_type):
         # Get properties from isd_file
-        with open(isd_file, 'r') as f:
-            isd_data = f.read()
-        
-        # ISD data
-        isd_dict = json.loads(isd_data)
+        isd_dict = load_isd(isd_file)
 
         # Get common properties from ISD
         naif_keywords = isd_dict[ISD_KEY_NAIF_KEYWORDS]
@@ -684,6 +745,15 @@ def isd_to_kernel(
                 raise Exception(f"Could not find LSK for [{isd_file}].")
             logger.info(f"sclk_kernels={sclk_kernels}, lsk_kernel={lsk_kernel}")
 
+            # Writing a CK requires encoding the ephemeris times to SCLK ticks,
+            # which normally furnishes the SCLK/LSK from a local SPICE data dir.
+            # In web mode we do that encoding server-side (etsToSclkTicks) and
+            # hand writeCk the pre-encoded ticks so no local data dir is needed.
+            ck_times = inst_pt_times
+            sc_id = int(inst_frame_code / 1000)
+            ck_times, _ = psql.doubleEtsToSclkTicks(sc_id, inst_pt_times, mission_name, use_web)
+            logger.info(f"Encoded {len(ck_times)} ETs to SCLK ticks via web for sc={sc_id}.")
+
             out_comment = ck_comment(
                 outfile=outfile,
                 segment_id=segment_id,
@@ -699,15 +769,14 @@ def isd_to_kernel(
                 has_av=has_av,
                 kernels=kernels,
                 comment=comment)
+
             psql.writeCk(
                 outfile,
                 inst_pt_quaternions,
-                inst_pt_times,
+                ck_times,
                 inst_frame_code,
                 ck_reference_frame,
                 segment_id,
-                sclk_kernels,
-                lsk_kernel,
                 inst_pt_velocities,
                 out_comment
             )
@@ -720,18 +789,34 @@ def isd_to_kernel(
             except ValueError:
                 return False
 
-        if data is None:
-            raise Exception(f"Must enter JSON keywords to generate kernel [{outfile}].")
-        elif not is_valid_json(data):
-            raise Exception("The 'data' payload is not valid JSON.")
-        
-        data = json.loads(data)
+        # Text kernel keywords can come from an ISD's naif_keywords, from the
+        # user-provided data payload, or both. When an ISD is given, its
+        # naif_keywords are used; any user data is appended after (and takes
+        # precedence over) them. When no ISD is given, the user must supply data.
+        keywords = {}
+
+        if isd_file is not None:
+            naif_keywords = load_isd(isd_file).get(ISD_KEY_NAIF_KEYWORDS, {})
+            if not naif_keywords:
+                logger.info(f"ISD [{isd_file}] has no '{ISD_KEY_NAIF_KEYWORDS}' to add.")
+            keywords.update(naif_keywords)
+
+        if data is not None:
+            if not is_valid_json(data):
+                raise Exception("The 'data' payload is not valid JSON.")
+            keywords.update(json.loads(data))
+
+        if not keywords:
+            raise Exception(
+                f"Must provide an ISD with '{ISD_KEY_NAIF_KEYWORDS}' and/or JSON "
+                f"data to generate text kernel [{outfile}]."
+            )
 
         logger.info(f"Generating text kernel type [{kernel_type}]")
         psql.writeTextKernel(
             outfile,
             kernel_type,
-            data,
+            keywords,
             out_comment
         )
     else:
