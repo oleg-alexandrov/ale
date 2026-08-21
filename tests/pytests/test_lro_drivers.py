@@ -108,6 +108,10 @@ class test_pds_naif(unittest.TestCase):
             ikid.return_value = -12345
             naif_keywords.return_value = {"INS-12345_OD_K": [1.0]}
             assert self.driver.odtk == [1.0]
+            # A single-valued NAIF keyword may come back as a scalar; odtk must
+            # still yield a list so the ISD distortion coefficients parse.
+            naif_keywords.return_value = {"INS-12345_OD_K": 1.0}
+            assert self.driver.odtk == [1.0]
 
     def test_usgscsm_distortion_model(self):
         with patch('ale.drivers.lro_drivers.LroLrocNacPds3LabelNaifSpiceDriver.odtk', \
@@ -196,6 +200,10 @@ class test_isis_naif(unittest.TestCase):
              patch('ale.drivers.lro_drivers.LroLrocNacIsisLabelNaifSpiceDriver.naif_keywords', new_callable=PropertyMock) as naif_keywords:
             ikid.return_value = -12345
             naif_keywords.return_value = {"INS-12345_OD_K": [1.0]}
+            assert self.driver.odtk == [1.0]
+            # A single-valued NAIF keyword may come back as a scalar; odtk must
+            # still yield a list so the ISD distortion coefficients parse.
+            naif_keywords.return_value = {"INS-12345_OD_K": 1.0}
             assert self.driver.odtk == [1.0]
 
     def test_light_time_correction(self):

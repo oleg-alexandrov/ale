@@ -44,6 +44,7 @@ release.
 - Nadir velocity axis is now computed from the `INS<ikid>_TRANSX` keyword with a `[1] < [2]` index comparison, matching ISIS's `SpiceRotation::setEphemerisTimeNadir`. [#713](https://github.com/DOI-USGS/ale/pull/713)
 - Fixed `KeyError: 'MEX_HRSC_S1'` when generating an ISD for the MEX HRSC stereo channels (and any non-IR filter channel). The HRSC drivers now override `spiceql_mission` to return `hrsc`, matching the pattern used by the KPLO and Mariner drivers, instead of looking up the filter-specific instrument id in `spiceql_mission_map`, which only lists one channel. [#716](https://github.com/DOI-USGS/ale/pull/716)
 - Fixed printing kernel info via Error message, now a debug message instead. [#717](https://github.com/DOI-USGS/ale/pull/717)
+- Fixed `isd_generate` producing an unusable LRO NAC ISD: the `lrolrocnac` optical distortion coefficient was written as a scalar instead of a list, so USGSCSM could not parse it and failed to build the camera. The NAC `odtk` now always returns a list. [#736](https://github.com/DOI-USGS/ale/pull/736)
 
 ## [1.2.0] - 2026-05-20
 
