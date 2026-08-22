@@ -65,7 +65,12 @@ class GalileoSsiIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, RadialDis
             key_str = "K1_COVER"
         else:
             key_str = "K1"
-        return self.naif_keywords[f"INS{str(self.ikid)}_{key_str}"]
+        odtk = self.naif_keywords[f"INS{str(self.ikid)}_{key_str}"]
+        # A single-valued NAIF keyword may be returned as a scalar rather than a
+        # list. The distortion coefficients in the ISD must be a list.
+        if not isinstance(odtk, list):
+            odtk = [odtk]
+        return odtk
 
     @property
     def ephemeris_start_time(self):

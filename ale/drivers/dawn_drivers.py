@@ -130,7 +130,12 @@ class DawnFcPds3NaifSpiceDriver(Framer, Pds3Label, NaifSpice, Driver):
         : list
           Radial distortion coefficients
         """
-        return self.naif_keywords['INS{}_RAD_DIST_COEFF'.format(self.ikid)]
+        odtk = self.naif_keywords['INS{}_RAD_DIST_COEFF'.format(self.ikid)]
+        # A single-valued NAIF keyword may be returned as a scalar rather than a
+        # list. The distortion coefficients in the ISD must be a list.
+        if not isinstance(odtk, list):
+            odtk = [odtk]
+        return odtk
 
     # TODO: Update focal2pixel samples and lines to reflect the rectangular
     #       nature of dawn pixels
