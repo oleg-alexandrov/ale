@@ -1026,6 +1026,10 @@ class LroLrocWacIsisLabelIsisSpiceDriver(PushFrame, IsisLabel, IsisSpice, Radial
           Radial distortion coefficients.
         """
         val = get_naif_keyword(self, 'odtk', 'INS{}_OD_K'.format(self.fikid))
+        # A single-valued NAIF keyword may be returned as a scalar rather than a
+        # list. The distortion coefficients in the ISD must be a list.
+        if not isinstance(val, list):
+            val = [val]
         val = [x * -1 for x in val]
         return val
 
@@ -1176,6 +1180,10 @@ class LroLrocWacIsisLabelNaifSpiceDriver(PushFrame, IsisLabel, NaifSpice, Radial
           Radial distortion coefficients.
         """
         coeffs = self.naif_keywords['INS{}_OD_K'.format(self.fikid)]
+        # A single-valued NAIF keyword may be returned as a scalar rather than a
+        # list. The distortion coefficients in the ISD must be a list.
+        if not isinstance(coeffs, list):
+            coeffs = [coeffs]
         coeffs = [x * -1 for x in coeffs]
         return coeffs
 
