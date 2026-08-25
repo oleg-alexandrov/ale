@@ -328,7 +328,12 @@ class NewHorizonsMvicIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, Lege
         : list
           Optical distortion x coefficients
         """
-        return self.naif_keywords['INS{}_DISTORTION_COEF_X'.format(self.parent_id)]
+        odtx = self.naif_keywords['INS{}_DISTORTION_COEF_X'.format(self.parent_id)]
+        # A single-valued NAIF keyword may be returned as a scalar rather than a
+        # list. The distortion coefficients in the ISD must be a list.
+        if not isinstance(odtx, list):
+            odtx = [odtx]
+        return odtx
 
 
     @property
@@ -341,7 +346,12 @@ class NewHorizonsMvicIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, Lege
         : list
           Optical distortion y coefficients
         """
-        return self.naif_keywords['INS{}_DISTORTION_COEF_Y'.format(self.parent_id)]
+        odty = self.naif_keywords['INS{}_DISTORTION_COEF_Y'.format(self.parent_id)]
+        # A single-valued NAIF keyword may be returned as a scalar rather than a
+        # list. The distortion coefficients in the ISD must be a list.
+        if not isinstance(odty, list):
+            odty = [odty]
+        return odty
 
     @property
     def band_times(self):
@@ -538,7 +548,12 @@ class NewHorizonsMvicTdiIsisLabelNaifSpiceDriver(LineScanner, IsisLabel, NaifSpi
         : list
           Optical distortion x coefficients
         """
-        return self.naif_keywords['INS{}_DISTORTION_COEF_X'.format(self.parent_id)]
+        odtx = self.naif_keywords['INS{}_DISTORTION_COEF_X'.format(self.parent_id)]
+        # A single-valued NAIF keyword may be returned as a scalar rather than a
+        # list. The distortion coefficients in the ISD must be a list.
+        if not isinstance(odtx, list):
+            odtx = [odtx]
+        return odtx
 
     @property
     def odty(self):
@@ -550,7 +565,12 @@ class NewHorizonsMvicTdiIsisLabelNaifSpiceDriver(LineScanner, IsisLabel, NaifSpi
         : list
           Optical distortion y coefficients
         """
-        return self.naif_keywords['INS{}_DISTORTION_COEF_Y'.format(self.parent_id)]
+        odty = self.naif_keywords['INS{}_DISTORTION_COEF_Y'.format(self.parent_id)]
+        # A single-valued NAIF keyword may be returned as a scalar rather than a
+        # list. The distortion coefficients in the ISD must be a list.
+        if not isinstance(odty, list):
+            odty = [odty]
+        return odty
 
     @property
     def naif_keywords(self):
