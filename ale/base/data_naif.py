@@ -231,7 +231,12 @@ class NaifSpice():
           Optical distortion x coefficients
         """
         if not hasattr(self, "_odtx"):
-            self._odtx = self.naif_keywords['INS{}_OD_T_X'.format(self.ikid)]
+            odtx = self.naif_keywords['INS{}_OD_T_X'.format(self.ikid)]
+            # A single-valued NAIF keyword may be returned as a scalar rather
+            # than a list. The distortion coefficients in the ISD must be a list.
+            if not isinstance(odtx, list):
+                odtx = [odtx]
+            self._odtx = odtx
         return self._odtx
 
     @property
@@ -246,7 +251,12 @@ class NaifSpice():
           Optical distortion y coefficients
         """
         if not hasattr(self, "_odty"):
-            self._odty = self.naif_keywords['INS{}_OD_T_Y'.format(self.ikid)]
+            odty = self.naif_keywords['INS{}_OD_T_Y'.format(self.ikid)]
+            # A single-valued NAIF keyword may be returned as a scalar rather
+            # than a list. The distortion coefficients in the ISD must be a list.
+            if not isinstance(odty, list):
+                odty = [odty]
+            self._odty = odty
         return self._odty
 
     @property
@@ -261,7 +271,12 @@ class NaifSpice():
           Radial distortion coefficients
         """
         if not hasattr(self, "_odtk"):
-            self._odtk = self.naif_keywords['INS{}_OD_K'.format(self.ikid)]
+            odtk = self.naif_keywords['INS{}_OD_K'.format(self.ikid)]
+            # A single-valued NAIF keyword may be returned as a scalar rather
+            # than a list. The distortion coefficients in the ISD must be a list.
+            if not isinstance(odtk, list):
+                odtk = [odtk]
+            self._odtk = odtk
         return self._odtk
 
     @property

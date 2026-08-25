@@ -115,6 +115,17 @@ class test_dawn_fc_pds3_naif(unittest.TestCase):
             dist = self.driver.usgscsm_distortion_model
             assert dist['dawnfc']['coefficients'] == [12345]
 
+    def test_odtk(self):
+        with patch.object(ale.drivers.dawn_drivers.NaifSpice, 'ikid', new_callable=PropertyMock) as ikid, \
+             patch('ale.drivers.dawn_drivers.NaifSpice.naif_keywords', new_callable=PropertyMock) as naif_keywords:
+            ikid.return_value = -12345
+            # A single-valued NAIF keyword may come back as a scalar; odtk must
+            # still yield a list so the ISD distortion coefficients parse.
+            naif_keywords.return_value = {"INS-12345_RAD_DIST_COEFF": 1.0e-3}
+            assert self.driver.odtk == [1.0e-3]
+            naif_keywords.return_value = {"INS-12345_RAD_DIST_COEFF": [1.0e-3]}
+            assert self.driver.odtk == [1.0e-3]
+
     def test_focal2pixel_samples(self):
         with patch.object(ale.drivers.dawn_drivers.NaifSpice, 'ikid', new_callable=PropertyMock) as ikid, \
              patch('ale.drivers.dawn_drivers.NaifSpice.naif_keywords', new_callable=PropertyMock) as naif_keywords:

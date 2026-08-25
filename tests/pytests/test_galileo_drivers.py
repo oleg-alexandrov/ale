@@ -45,8 +45,12 @@ class test_galileossi_isis3_naif(unittest.TestCase):
         with patch.object(ale.drivers.galileo_drivers.NaifSpice, 'ikid', new_callable=PropertyMock) as ikid, \
              patch('ale.drivers.galileo_drivers.NaifSpice.naif_keywords', new_callable=PropertyMock) as naif_keywords:
             ikid.return_value = -77001
+            # A single-valued NAIF keyword may come back as a scalar; odtk must
+            # still yield a list so the ISD distortion coefficients parse.
             naif_keywords.return_value = {"INS-77001_K1": -2.4976983626e-05}
-            assert self.driver.odtk == -2.4976983626e-05
+            assert self.driver.odtk == [-2.4976983626e-05]
+            naif_keywords.return_value = {"INS-77001_K1": [-2.4976983626e-05]}
+            assert self.driver.odtk == [-2.4976983626e-05]
 
     def test_instrument_id(self):
         assert self.driver.instrument_id == "GLL_SSI_PLATFORM"
