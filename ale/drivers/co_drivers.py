@@ -223,9 +223,7 @@ class CassiniIssIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, RadialDis
 
     @property
     def detector_center_line(self):
-        # ISIS uses 0.5-based CCD coordinates (pixel centers at half integers)
-        # while CSM is 0-based. Subtract 0.5 to match the ISIS look direction, as
-        # the LRO, MRO, Dawn, MESSENGER, Kaguya, KPLO and TGO CaSSIS drivers do.
+        # ISIS CCD coordinates are 0.5-based (pixel centers at half integers); CSM is 0-based.
         return super().detector_center_line - 0.5
 
     @property
@@ -247,10 +245,7 @@ class CassiniIssIsisLabelNaifSpiceDriver(Framer, IsisLabel, NaifSpice, RadialDis
           except:
             default_focal_len = float(self.naif_keywords['INS{}_FOV_CENTER_PIXEL'.format(self.ikid)][0])
 
-          # Apply the filter-specific focal length regardless of which branch set
-          # the default above. Previously this block was inside the except, so when
-          # INS_FOCAL_LENGTH was defined (the try succeeded) _focal_length was never
-          # set and the property raised AttributeError.
+          # Apply the filter-specific focal length.
           filters = tuple(self.label["IsisCube"]["BandBin"]['FilterName'].split("/"))
 
           if self.instrument_id == "CASSINI_ISS_NAC":
@@ -811,9 +806,7 @@ class CassiniIssIsisLabelIsisSpiceDriver(Framer, IsisLabel, IsisSpice, RadialDis
 
     @property
     def detector_center_line(self):
-        # ISIS uses 0.5-based CCD coordinates (pixel centers at half integers)
-        # while CSM is 0-based. Subtract 0.5 to match the ISIS look direction, as
-        # the LRO, MRO, Dawn, MESSENGER, Kaguya, KPLO and TGO CaSSIS drivers do.
+        # ISIS CCD coordinates are 0.5-based (pixel centers at half integers); CSM is 0-based.
         return super().detector_center_line - 0.5
 
     @property

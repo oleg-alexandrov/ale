@@ -199,16 +199,12 @@ class test_cassini_iss_isis_naif(unittest.TestCase):
             assert self.driver.focal_length == 2003.09
 
     def test_focal_length_with_ins_focal_length(self):
-        # Regression: when INS_FOCAL_LENGTH is defined the try branch succeeds; the
-        # focal length must still resolve (previously _focal_length was left unset
-        # in that case, raising AttributeError).
+        # focal_length resolves when INS_FOCAL_LENGTH is defined.
         with patch.object(CassiniIssIsisLabelNaifSpiceDriver, 'naif_keywords', new_callable=PropertyMock) as naif_keywords_call, \
              patch.object(CassiniIssIsisLabelNaifSpiceDriver, 'ikid', new_callable=PropertyMock) as ikid_call:
             naif_keywords_call.return_value = {"INS-12345_FOCAL_LENGTH": 2000.0}
             ikid_call.return_value = -12345
-            # The CL1/UV3 filter is in the lookup table, so its focal length is
-            # returned; the point is that this resolves at all (no AttributeError)
-            # now that INS_FOCAL_LENGTH is defined and the try branch succeeds.
+            # CL1/UV3 is in the lookup table, so its focal length is returned.
             assert self.driver.focal_length == 2003.09
 
     def test_sensor_model_version(self):
