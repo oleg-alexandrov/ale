@@ -35,6 +35,13 @@ release.
 
 ## [Unreleased]
 
+### Fixed
+- Cassini ISS drivers now produce a CSM camera that matches ISIS (cam_test on a NAC image: 0.707 px to ~5e-4 px; the ISIS-SPICE, NAIF-SPICE and PDS3 drivers agree). Fixes:
+  - ISIS-SPICE driver: emit the radial optical distortion (was none).
+  - ISIS-SPICE and NAIF-SPICE drivers: subtract 0.5 from the detector center (ISIS 0.5-based to CSM 0-based).
+  - NAIF-SPICE driver: `focal_length` no longer raises `AttributeError` when `INS_FOCAL_LENGTH` is defined.
+  - NAIF-SPICE driver: `ephemeris_start_time` uses the scalar from `utcToEt` (was a tuple). [#XXXX](https://github.com/DOI-USGS/ale/pull/XXXX)
+
 ## [1.3.0] - 2026-08-25
 
 ### Added
